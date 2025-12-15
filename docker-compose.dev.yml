@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Сервис для тестирования
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    environment:
+      - ENVIRONMENT=testing
+  
+  # PostgreSQL для разработки
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: salon_dev
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  # Redis для разработки
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+
+  # PgAdmin для просмотра БД (опционально)
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@salon.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres-dev
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
