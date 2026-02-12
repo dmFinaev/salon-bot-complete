@@ -37,7 +37,7 @@ def start_command(message):
     bot.send_message(message.chat.id,
                     "💇 *Salon Manager* готов к работе!\n"
                     "Выберите действие:",
-                    parse_mode='Markdown',
+                    parse_mode=None,
                     reply_markup=kb.main_menu_keyboard())
 
 @bot.message_handler(commands=['help'])
@@ -60,7 +60,7 @@ def help_command(message):
 /edit 3 - редактировать запись №3
 /delete 2 - удалить запись №2
 """
-    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, help_text, parse_mode=None)
 
 # ===================== ГЛАВНОЕ МЕНЮ =====================
 
@@ -71,7 +71,7 @@ def start_add_client(message):
     bot.send_message(message.chat.id,
                     "📝 *Начнем запись клиента:*\n\n"
                     "Введите *имя клиента*:",
-                    parse_mode='Markdown',
+                    parse_mode=None,
                     reply_markup=kb.cancel_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == "👥 Сегодняшние записи")
@@ -88,10 +88,11 @@ def show_today_records(message):
         client = record["client"]
         response += f"{i}. *{client['name']}*\n"
         response += f"   📅 {client['date']}\n"
+        response += f"   ⏰ {client['time']}\n"
         response += f"   📞 {client['phone']}\n"
         response += f"   💇 {client['service']}\n\n"
     
-    bot.send_message(message.chat.id, response, parse_mode='Markdown')
+    bot.send_message(message.chat.id, response, parse_mode=None)
 
 @bot.message_handler(func=lambda message: message.text == "📋 Все записи")
 def show_all_records(message):
@@ -107,18 +108,19 @@ def show_all_records(message):
         client = record["client"]
         record_id = record.get("id", "без ID")[:8]
         
-        response += f"{i}. *{client['name']}*\n"
-        response += f"   📅 {client['date']}\n"
-        response += f"   📞 {client['phone']}\n"
-        response += f"   💇 {client['service']}\n"
-        response += f"   🆔 {record_id}\n\n"
+    response += f"{i}. *{client['name']}*\n"
+    response += f"   📅 {client['date']}\n"
+    response += f"   ⏰ {client['time']}\n"
+    response += f"   📞 {client['phone']}\n"
+    response += f"   💇 {client['service']}\n"
+    response += f"   🆔 {record_id}\n\n"
     
     response += "✏️ *Для управления:*\n"
     response += "/edit [номер] - редактировать запись\n"
     response += "/delete [номер] - удалить запись\n"
     response += "Например: `/edit 3` или `/delete 2`"
     
-    bot.send_message(message.chat.id, response, parse_mode='Markdown')
+    bot.send_message(message.chat.id, response, parse_mode=None)
 
 # ===================== ДОБАВЛЕНИЕ КЛИЕНТА =====================
 
@@ -138,7 +140,7 @@ def process_client_name(message):
     bot.send_message(message.chat.id,
                     f"👤 Имя: *{message.text}*\n\n"
                     "📞 Введите *телефон* клиента:",
-                    parse_mode='Markdown')
+                    parse_mode=None)
 
 @bot.message_handler(func=lambda message: 
                     user_states.get(message.chat.id, {}).get("state") == UserState.ADDING_PHONE)
@@ -153,7 +155,7 @@ def process_client_phone(message):
     
     bot.send_message(message.chat.id,
                     "📅 Введите *дату и время* (например: 25.12 в 15:00):",
-                    parse_mode='Markdown')
+                    parse_mode=None)
 
 @bot.message_handler(func=lambda message: 
                     user_states.get(message.chat.id, {}).get("state") == UserState.ADDING_DATE)
@@ -168,7 +170,7 @@ def process_client_date(message):
     
     bot.send_message(message.chat.id,
                     "💇 Введите *услугу* (например: Стрижка, Окрашивание):",
-                    parse_mode='Markdown')
+                    parse_mode=None)
 
 @bot.message_handler(func=lambda message: 
                     user_states.get(message.chat.id, {}).get("state") == UserState.ADDING_SERVICE)
@@ -193,7 +195,7 @@ def process_client_service(message):
                         f"📅 *Дата:* {client_data['date']}\n"
                         f"💇 *Услуга:* {client_data['service']}\n\n"
                         f"Запись сохранена!",
-                        parse_mode='Markdown',
+                        parse_mode=None,
                         reply_markup=kb.main_menu_keyboard())
     else:
         bot.send_message(chat_id,
@@ -228,7 +230,7 @@ def delete_record_command(message):
             bot.send_message(message.chat.id,
                            f"✅ Запись #{number} удалена\n"
                            f"Клиент: *{record['client']['name']}*",
-                           parse_mode='Markdown')
+                           parse_mode=None)
         else:
             bot.send_message(message.chat.id, "❌ Ошибка при удалении")
             
@@ -245,7 +247,7 @@ def show_delete_help(chat_id):
                     "Например: `/delete 3`\n\n"
                     "Чтобы увидеть номера записей:\n"
                     "Нажмите *📋 Все записи*",
-                    parse_mode='Markdown')
+                    parse_mode=None)
 
 # ===================== РЕДАКТИРОВАНИЕ ЗАПИСЕЙ =====================
 
@@ -283,12 +285,11 @@ def edit_record_command(message):
                         f"👤 {record['client']['name']}\n"
                         f"📞 {record['client']['phone']}\n"
                         f"📅 {record['client']['date']}\n"
+                        f"⏰ {record['client']['time']}\n"
                         f"💇 {record['client']['service']}\n\n"
                         f"*Какое поле меняем?*",
-                        parse_mode='Markdown',
+                        parse_mode=None,
                         reply_markup=kb.edit_fields_keyboard())
-        
-    except ValueError:
         bot.send_message(message.chat.id, "⚠️ Номер должен быть числом!")
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ Ошибка: {e}")
@@ -304,6 +305,7 @@ def process_edit_field_choice(message):
         "👤 Имя": "name",
         "📞 Телефон": "phone",
         "📅 Дата": "date",
+        "⏰ Время": "time",
         "💇 Услуга": "service"
     }
     
@@ -317,7 +319,7 @@ def process_edit_field_choice(message):
         bot.send_message(chat_id,
                         f"✏️ Текущее значение: *{current_value}*\n"
                         f"Введите новое значение:",
-                        parse_mode='Markdown',
+                        parse_mode=None,
                         reply_markup=kb.cancel_keyboard())
         
     elif message.text == "❌ Отмена":
@@ -352,7 +354,7 @@ def process_edit_new_value(message):
                         f"✅ *Запись #{record_number} обновлена!*\n\n"
                         f"Поле: {field_display}\n"
                         f"Новое значение: *{new_value}*",
-                        parse_mode='Markdown',
+                        parse_mode=None,
                         reply_markup=kb.main_menu_keyboard())
     else:
         bot.send_message(chat_id, "❌ Ошибка при обновлении записи")
@@ -383,7 +385,7 @@ def show_edit_help(chat_id):
                     "Например: `/edit 3`\n\n"
                     "Чтобы увидеть номера записей:\n"
                     "Нажмите *📋 Все записи*",
-                    parse_mode='Markdown')
+                    parse_mode=None)
 
 # ===================== ОБРАБОТКА ПРОЧИХ СООБЩЕНИЙ =====================
 

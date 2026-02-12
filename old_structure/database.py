@@ -1,0 +1,506 @@
+"""
+database.py - работа с SQLite базой данных
+"""
+import sqlite3
+import datetime
+import uuid
+import os
+from typing import List, Dict, Optional
+
+def get_connection():
+    """Создает подключение к базе данных"""
+    db_path = os.path.join('data', 'salon_bot.db')
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_database():
+    """Инициализирует таблицы в базе данных"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS appointments (
+            id TEXT PRIMARY KEY,
+            chat_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            service TEXT NOT NULL,
+            appointment_date TEXT NOT NULL,
+            reminder_sent INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS reminders_status (
+            record_id TEXT PRIMARY KEY,
+            day_before_sent INTEGER DEFAULT 0,
+            two_hours_before_sent INTEGER DEFAULT 0,
+            FOREIGN KEY (record_id) REFERENCES appointments (id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("✅ База данных инициализирована")
+
+def generate_record_id():
+    """Генерирует уникальный ID для записи"""
+    return "rec_" + str(uuid.uuid4())[:8]
+
+def save_client_record(chat_id: int, client_data: Dict) -> Optional[str]:
+    """
+    Сохраняет запись клиента в базу данных
+    Возвращает ID созданной записи или None при ошибке
+    """
+    try:
+        record_id = generate_record_id()
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO appointments (id, chat_id, name, phone, service, appointment_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            record_id,
+            chat_id,
+            client_data.get('name', ''),
+            client_data.get('phone', ''),
+            client_data.get('service', ''),
+            client_data.get('date', '') + ' ' + client_data.get('time', '').replace('в ', '')
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Запись сохранена с ID: {record_id}")
+        return record_id
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения: {e}")
+        return None
+
+def load_all_records() -> List[Dict]:
+    """Загружает ВСЕ записи из базы данных"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, chat_id, name, phone, service, appointment_date, reminder_sent
+            FROM appointments
+            ORDER BY created_at DESC
+        ''')
+        
+        records = []
+        for row in cursor.fetchall():
+            # Парсим дату и время (формат: "07.12 14.00" или "07.12 в 14.00")
+            appointment_date = row['appointment_date']
+            if ' в ' in appointment_date:
+                # Формат "07.12 в 14.00"
+                parts = appointment_date.split(' в ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            else:
+                # Формат "07.12 14.00"
+                parts = appointment_date.split(' ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            
+            records.append({
+                'id': row['id'],
+                'chat_id': row['chat_id'],
+                'client': {
+                    'name': row['name'],
+                    'phone': row['phone'],
+                    'service': row['service'],
+                    'date': date_part,
+                    'time': time_part
+                },
+                'reminder_sent': row['reminder_sent']
+            })
+        
+        conn.close()
+        return records
+        
+    except Exception as e:
+        print(f"❌ Ошибка чтения из базы: {e}")
+        return []
+
+# Инициализируем базу при импорте
+init_database()
+
+def get_today_records() -> List[Dict]:
+    """Возвращает записи на сегодня"""
+    try:
+        today = datetime.datetime.now().strftime("%d.%m")
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, chat_id, name, phone, service, appointment_date
+            FROM appointments
+            WHERE appointment_date LIKE ?
+        ''', (f'%{today}%',))
+        
+        records = []
+        for row in cursor.fetchall():
+            # Парсим дату и время
+            appointment_date = row['appointment_date']
+            if ' в ' in appointment_date:
+                parts = appointment_date.split(' в ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            else:
+                parts = appointment_date.split(' ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            
+            records.append({
+                'id': row['id'],
+                'chat_id': row['chat_id'],
+                'client': {
+                    'name': row['name'],
+                    'phone': row['phone'],
+                    'service': row['service'],
+                    'date': date_part,
+                    'time': time_part
+                }
+            })
+        
+        conn.close()
+        return records
+        
+    except Exception as e:
+        print(f"❌ Ошибка получения записей на сегодня: {e}")
+        return []
+
+def delete_record_by_id(record_id: str) -> bool:
+    """Удаляет запись по ID"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM appointments WHERE id = ?', (record_id,))
+        cursor.execute('DELETE FROM reminders_status WHERE record_id = ?', (record_id,))
+        
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        if deleted:
+            print(f"✅ Запись {record_id} удалена")
+        else:
+            print(f"⚠️ Запись {record_id} не найдена")
+        
+        return deleted
+        
+    except Exception as e:
+        print(f"❌ Ошибка удаления: {e}")
+        return False
+
+def update_record_field(record_id: str, field: str, new_value: str) -> bool:
+    """Обновляет одно поле в записи"""
+    try:
+        # Определяем какое поле обновляем
+        if field not in ['name', 'phone', 'service', 'date', 'time']:
+            print(f"⚠️ Поле {field} не поддерживается для обновления")
+            return False
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        if field in ['date', 'time']:
+            # Нужно обновить appointment_date
+            cursor.execute('SELECT appointment_date FROM appointments WHERE id = ?', (record_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+                
+            current_date_time = row['appointment_date']
+            if ' в ' in current_date_time:
+                parts = current_date_time.split(' в ')
+                current_date = parts[0] if len(parts) > 0 else ''
+                current_time = parts[1] if len(parts) > 1 else ''
+            else:
+                parts = current_date_time.split(' ')
+                current_date = parts[0] if len(parts) > 0 else ''
+                current_time = parts[1] if len(parts) > 1 else ''
+            
+            if field == 'date':
+                new_date_time = f"{new_value} {current_time}"
+            else:  # field == 'time'
+                new_date_time = f"{current_date} {new_value}"
+            
+            cursor.execute('''
+                UPDATE appointments 
+                SET appointment_date = ?
+                WHERE id = ?
+            ''', (new_date_time, record_id))
+        else:
+            # Обновляем прямое поле
+            cursor.execute(f'''
+                UPDATE appointments 
+                SET {field} = ?
+                WHERE id = ?
+            ''', (new_value, record_id))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        if updated:
+            print(f"✅ Запись {record_id} обновлена")
+        else:
+            print(f"⚠️ Запись {record_id} не найдена")
+        
+        return updated
+        
+    except Exception as e:
+        print(f"❌ Ошибка обновления: {e}")
+        return False
+
+def load_reminder_status(record_id: str) -> Dict:
+    """
+    Загружает статус напоминаний для записи
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT day_before_sent, two_hours_before_sent
+            FROM reminders_status
+            WHERE record_id = ?
+        ''', (record_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'day_before': bool(row['day_before_sent']),
+                'two_hours_before': bool(row['two_hours_before_sent'])
+            }
+        else:
+            return {}
+            
+    except Exception as e:
+        print(f"❌ Ошибка загрузки статуса напоминаний: {e}")
+        return {}
+
+def save_reminder_status(record_id: str, status: Dict) -> bool:
+    """
+    Сохраняет статус напоминаний для записи
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO reminders_status 
+            (record_id, day_before_sent, two_hours_before_sent)
+            VALUES (?, ?, ?)
+        ''', (
+            record_id,
+            1 if status.get('day_before', False) else 0,
+            1 if status.get('two_hours_before', False) else 0
+        ))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения статуса напоминаний: {e}")
+        return False
+
+def get_today_records() -> List[Dict]:
+    """Возвращает записи на сегодня"""
+    try:
+        today = datetime.datetime.now().strftime("%d.%m")
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, chat_id, name, phone, service, appointment_date
+            FROM appointments
+            WHERE appointment_date LIKE ?
+        ''', (f'%{today}%',))
+        
+        records = []
+        for row in cursor.fetchall():
+            # Парсим дату и время
+            appointment_date = row['appointment_date']
+            if ' в ' in appointment_date:
+                parts = appointment_date.split(' в ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            else:
+                parts = appointment_date.split(' ')
+                date_part = parts[0] if len(parts) > 0 else ''
+                time_part = parts[1] if len(parts) > 1 else ''
+            
+            records.append({
+                'id': row['id'],
+                'chat_id': row['chat_id'],
+                'client': {
+                    'name': row['name'],
+                    'phone': row['phone'],
+                    'service': row['service'],
+                    'date': date_part,
+                    'time': time_part
+                }
+            })
+        
+        conn.close()
+        return records
+        
+    except Exception as e:
+        print(f"❌ Ошибка получения записей на сегодня: {e}")
+        return []
+
+def delete_record_by_id(record_id: str) -> bool:
+    """Удаляет запись по ID"""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM appointments WHERE id = ?', (record_id,))
+        cursor.execute('DELETE FROM reminders_status WHERE record_id = ?', (record_id,))
+        
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        if deleted:
+            print(f"✅ Запись {record_id} удалена")
+        else:
+            print(f"⚠️ Запись {record_id} не найдена")
+        
+        return deleted
+        
+    except Exception as e:
+        print(f"❌ Ошибка удаления: {e}")
+        return False
+
+def update_record_field(record_id: str, field: str, new_value: str) -> bool:
+    """Обновляет одно поле в записи"""
+    try:
+        # Определяем какое поле обновляем
+        if field not in ['name', 'phone', 'service', 'date', 'time']:
+            print(f"⚠️ Поле {field} не поддерживается для обновления")
+            return False
+        
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        if field in ['date', 'time']:
+            # Нужно обновить appointment_date
+            cursor.execute('SELECT appointment_date FROM appointments WHERE id = ?', (record_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+                
+            current_date_time = row['appointment_date']
+            if ' в ' in current_date_time:
+                parts = current_date_time.split(' в ')
+                current_date = parts[0] if len(parts) > 0 else ''
+                current_time = parts[1] if len(parts) > 1 else ''
+            else:
+                parts = current_date_time.split(' ')
+                current_date = parts[0] if len(parts) > 0 else ''
+                current_time = parts[1] if len(parts) > 1 else ''
+            
+            if field == 'date':
+                new_date_time = f"{new_value} {current_time}"
+            else:  # field == 'time'
+                new_date_time = f"{current_date} {new_value}"
+            
+            cursor.execute('''
+                UPDATE appointments 
+                SET appointment_date = ?
+                WHERE id = ?
+            ''', (new_date_time, record_id))
+        else:
+            # Обновляем прямое поле
+            cursor.execute(f'''
+                UPDATE appointments 
+                SET {field} = ?
+                WHERE id = ?
+            ''', (new_value, record_id))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        if updated:
+            print(f"✅ Запись {record_id} обновлена")
+        else:
+            print(f"⚠️ Запись {record_id} не найдена")
+        
+        return updated
+        
+    except Exception as e:
+        print(f"❌ Ошибка обновления: {e}")
+        return False
+
+def load_reminder_status(record_id: str) -> Dict:
+    """
+    Загружает статус напоминаний для записи
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT day_before_sent, two_hours_before_sent
+            FROM reminders_status
+            WHERE record_id = ?
+        ''', (record_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'day_before': bool(row['day_before_sent']),
+                'two_hours_before': bool(row['two_hours_before_sent'])
+            }
+        else:
+            return {}
+            
+    except Exception as e:
+        print(f"❌ Ошибка загрузки статуса напоминаний: {e}")
+        return {}
+
+def save_reminder_status(record_id: str, status: Dict) -> bool:
+    """
+    Сохраняет статус напоминаний для записи
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO reminders_status 
+            (record_id, day_before_sent, two_hours_before_sent)
+            VALUES (?, ?, ?)
+        ''', (
+            record_id,
+            1 if status.get('day_before', False) else 0,
+            1 if status.get('two_hours_before', False) else 0
+        ))
+        
+        conn.commit()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения статуса напоминаний: {e}")
+        return False

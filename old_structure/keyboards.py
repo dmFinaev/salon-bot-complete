@@ -25,7 +25,8 @@ def edit_fields_keyboard():
     btn1 = types.KeyboardButton("👤 Имя")
     btn2 = types.KeyboardButton("📞 Телефон")
     btn3 = types.KeyboardButton("📅 Дата")
-    btn4 = types.KeyboardButton("💇 Услуга")
-    btn5 = types.KeyboardButton("❌ Отмена")
-    markup.add(btn1, btn2, btn3, btn4, btn5)
+    btn4 = types.KeyboardButton("⏰ Время")
+    btn5 = types.KeyboardButton("💇 Услуга")
+    btn6 = types.KeyboardButton("❌ Отмена")
+    markup.add(btn1, btn2, btn3, btn4, btn5, btn6)
     return markup
